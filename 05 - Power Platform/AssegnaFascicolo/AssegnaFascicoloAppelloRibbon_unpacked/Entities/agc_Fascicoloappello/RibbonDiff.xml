@@ -1,0 +1,105 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<RibbonDiffXml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <CustomActions>
+
+    <!-- Tasto nella FORM del fascicolo d'appello -->
+    <CustomAction Id="agc.Form.agc_fascicoloappello.MainTab.Save.Assegna.CustomAction"
+      Location="Mscrm.Form.agc_fascicoloappello.MainTab.Save.Controls._children"
+      Sequence="21">
+      <CommandUIDefinition>
+        <Button Id="agc.Form.agc_fascicoloappello.MainTab.Save.Assegna.Button"
+          Command="agc.Form.agc_fascicoloappello.Assegna.Command"
+          LabelText="Assegna Fascicolo"
+          Alt="Assegna Fascicolo"
+          ToolTipTitle="Assegna Fascicolo"
+          ToolTipDescription="Avvia il motore di assegnazione a 2 livelli (Sezione poi Magistrato relatore)"
+          TemplateAlias="o1"
+          Sequence="21" />
+      </CommandUIDefinition>
+    </CustomAction>
+
+    <!-- Tasto nella VISTA (grid) dei fascicoli d'appello -->
+    <CustomAction Id="agc.HomepageGrid.agc_fascicoloappello.MainTab.Actions.Assegna.CustomAction"
+      Location="Mscrm.HomepageGrid.agc_fascicoloappello.MainTab.Actions.Controls._children"
+      Sequence="21">
+      <CommandUIDefinition>
+        <Button Id="agc.HomepageGrid.agc_fascicoloappello.MainTab.Actions.Assegna.Button"
+          Command="agc.HomepageGrid.agc_fascicoloappello.Assegna.Command"
+          LabelText="Assegna Fascicolo"
+          Alt="Assegna Fascicolo"
+          ToolTipTitle="Assegna Fascicolo"
+          ToolTipDescription="Avvia il motore di assegnazione a 2 livelli (Sezione poi Magistrato relatore)"
+          TemplateAlias="o1"
+          Sequence="21" />
+      </CommandUIDefinition>
+    </CustomAction>
+
+  </CustomActions>
+  <Templates>
+    <RibbonTemplates Id="Mscrm.Templates"></RibbonTemplates>
+  </Templates>
+  <CommandDefinitions>
+
+    <!-- Command FORM -->
+    <CommandDefinition Id="agc.Form.agc_fascicoloappello.Assegna.Command">
+      <EnableRules>
+        <EnableRule Id="Mscrm.FormStateExistingOrReadOnly" />
+        <EnableRule Id="agc.Assegna.NotAssigned.Form.EnableRule" />
+      </EnableRules>
+      <DisplayRules />
+      <Actions>
+        <JavaScriptFunction FunctionName="AgicAsspeca.AssegnaFascicolo.eseguiDaForm"
+          Library="$webresource:agc_assegnafascicoloappello.js">
+          <CrmParameter Value="PrimaryControl" />
+        </JavaScriptFunction>
+      </Actions>
+    </CommandDefinition>
+
+    <!-- Command GRID -->
+    <CommandDefinition Id="agc.HomepageGrid.agc_fascicoloappello.Assegna.Command">
+      <EnableRules>
+        <EnableRule Id="agc.Assegna.SingleSelection.EnableRule" />
+        <EnableRule Id="agc.Assegna.NotAssigned.Grid.EnableRule" />
+      </EnableRules>
+      <DisplayRules />
+      <Actions>
+        <JavaScriptFunction FunctionName="AgicAsspeca.AssegnaFascicolo.eseguiDaGriglia"
+          Library="$webresource:agc_assegnafascicoloappello.js">
+          <CrmParameter Value="SelectedControl" />
+        </JavaScriptFunction>
+      </Actions>
+    </CommandDefinition>
+
+  </CommandDefinitions>
+  <RuleDefinitions>
+    <TabDisplayRules />
+    <DisplayRules />
+    <EnableRules>
+
+      <!-- Esattamente 1 record selezionato nella grid -->
+      <EnableRule Id="agc.Assegna.SingleSelection.EnableRule">
+        <SelectionCountRule AppliesTo="SelectedEntity" Minimum="1" Maximum="1" />
+      </EnableRule>
+
+      <!-- Form: disabilita se già assegnato (agc_sezioneassegnata/agc_magistratoassegnato valorizzati) -->
+      <EnableRule Id="agc.Assegna.NotAssigned.Form.EnableRule">
+        <CustomRule FunctionName="AgicAsspeca.AssegnaFascicolo.nonAssegnatoDaForm"
+          Library="$webresource:agc_assegnafascicoloappello.js"
+          Default="false">
+          <CrmParameter Value="PrimaryControl" />
+        </CustomRule>
+      </EnableRule>
+
+      <!-- Grid: disabilita se già assegnato -->
+      <EnableRule Id="agc.Assegna.NotAssigned.Grid.EnableRule">
+        <CustomRule FunctionName="AgicAsspeca.AssegnaFascicolo.nonAssegnatoDaGriglia"
+          Library="$webresource:agc_assegnafascicoloappello.js"
+          Default="false">
+          <CrmParameter Value="SelectedControl" />
+        </CustomRule>
+      </EnableRule>
+
+    </EnableRules>
+  </RuleDefinitions>
+  <LocLabels />
+</RibbonDiffXml>
