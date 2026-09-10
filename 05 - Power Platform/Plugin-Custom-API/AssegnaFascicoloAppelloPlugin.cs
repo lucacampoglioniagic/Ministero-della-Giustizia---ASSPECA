@@ -14,19 +14,31 @@ namespace AgicAsspeca.Plugins
     /// Implementa il motore di assegnazione a DUE LIVELLI richiesto da ASSPECA (diverso da ASPEN,
     /// che assegna direttamente al magistrato):
     ///   1) Livello SEZIONE: tra le sezioni attive compatibili con la categoria/specializzazione
-    ///      del fascicolo, si calcola PERC = (fascicoli già assegnati in quella categoria) /
-    ///      (numero magistrati della sezione). Si ordina per PERC crescente (tie-break: numero
-    ///      sezione) e si sceglie la sezione con PERC minimo tra le prime N ammesse a turno.
+    ///      del fascicolo, si individua la finestra "in turno" (le 4 sezioni, su un massimo di 6,
+    ///      il cui turno di rotazione è corrente, v. sotto), si calcola PERC = (fascicoli già
+    ///      assegnati in quella categoria) / (numero magistrati della sezione) SOLO tra le sezioni
+    ///      in turno, si ordina per PERC crescente (tie-break: numero sezione) e si sceglie la
+    ///      sezione con PERC minimo.
     ///   2) Livello MAGISTRATO: tra i magistrati della sezione assegnata, si sceglie quello con
     ///      MENO fascicoli nella stessa categoria (tie-break: anzianità di nomina). I Presidenti
     ///      sono esclusi dalle categorie marcate <c>agc_esclusapresidenti</c>. Un magistrato "nuovo"
     ///      (nessun fascicolo mai assegnato in nessuna categoria) viene trattato come se avesse il
     ///      MASSIMO dei conteggi ("messo in coda"), NON il minimo come farebbe ASPEN.
     ///
+    /// ROTAZIONE "prime 4 su 6 a turno" (v. Analisi Comparativa par. 6.1): la finestra delle
+    /// sezioni "in turno" NON è fissa (altrimenti, a parità di PERC = 0 su categorie nuove, il
+    /// tie-break per numero sezione concentrerebbe sempre le assegnazioni sulla sezione più bassa,
+    /// come osservato nel test su dati demo del 2026-09-10). Lo stato della rotazione è persistito
+    /// nella tabella chiave/valore <c>agc_configurazione</c> (record <c>agc_nome</c> =
+    /// <see cref="ConfigurazioneIndiceTurno"/>, <c>agc_valore</c> = indice 0..5 della sezione di
+    /// partenza della finestra). Ad ogni assegnazione:
+    ///  - si ordinano le sezioni candidate per <c>agc_numero</c> crescente;
+    ///  - si prende una finestra circolare di 4 sezioni a partire dall'indice corrente;
+    ///  - tra queste si sceglie quella con PERC minimo (tie-break: numero sezione);
+    ///  - l'indice viene poi incrementato di 1 (modulo il numero di sezioni candidate) e
+    ///    ripersistito, cosi la sezione di partenza della finestra ruota ad ogni assegnazione
+    ///    successiva, garantendo nel tempo pari opportunità a tutte le sezioni.
     /// ASSUNZIONI adottate per la POC (da validare con il cliente, v. Analisi Comparativa par. 6.1):
-    ///  - "prime N sezioni in turno" semplificato a: tutte le sezioni attive compatibili, prendendo
-    ///    le prime 4 per PERC crescente (il concetto di turno/rotazione storica non è ancora
-    ///    modellato in questa POC).
     ///  - Tie-break anzianità magistrato: ordinamento per data di nomina crescente (il magistrato
     ///    più anziano, cioè con la data più vecchia, viene preferito). Ambiguità nota (F1 p.15 vs
     ///    F3 30:03) - da confermare con il cliente.
@@ -52,6 +64,13 @@ namespace AgicAsspeca.Plugins
 
         // Valore scelta "Proposto" sul campo agc_fascicoloappello.agc_stato.
         private const int StatoProposto = 10000;
+
+        // Chiave del record agc_configurazione che persiste l'indice (0-based) della sezione di
+        // partenza della finestra "in turno" per la rotazione del Livello 1.
+        private const string ConfigurazioneIndiceTurno = "IndiceTurnoSezione";
+
+        // Dimensione della finestra "in turno" (prime N su totale sezioni compatibili).
+        private const int DimensioneFinestraTurno = 4;
 
         public AssegnaFascicoloAppelloPlugin(string unsecureConfiguration, string secureConfiguration)
             : base(typeof(AssegnaFascicoloAppelloPlugin))
@@ -161,7 +180,20 @@ namespace AgicAsspeca.Plugins
             if (candidate.Count == 0)
                 throw new InvalidPluginExecutionException("Nessuna sezione attiva disponibile per l'assegnazione.");
 
-            var classifica = candidate.Select(s =>
+            // Ordinamento stabile per numero sezione: definisce la sequenza su cui ruota la
+            // finestra "in turno".
+            var ordinateXNumero = candidate.OrderBy(s => s.GetAttributeValue<int>("agc_numero")).ToList();
+            var totaleCandidate = ordinateXNumero.Count;
+            var dimensioneFinestra = Math.Min(DimensioneFinestraTurno, totaleCandidate);
+
+            var indiceTurno = LeggiIndiceTurno(service, tracer) % totaleCandidate;
+
+            // Finestra circolare di N sezioni a partire dall'indice corrente (rotante).
+            var inTurno = Enumerable.Range(0, dimensioneFinestra)
+                .Select(offset => ordinateXNumero[(indiceTurno + offset) % totaleCandidate])
+                .ToList();
+
+            var classifica = inTurno.Select(s =>
             {
                 var numeroMagistrati = s.GetAttributeValue<decimal>("agc_numeromagistrati");
                 var conteggioFascicoli = ContaFascicoliCategoria(service, categoriaRef, "agc_sezioneassegnata", s.Id);
@@ -177,14 +209,80 @@ namespace AgicAsspeca.Plugins
             .ThenBy(x => x.Numero)
             .ToList();
 
-            // "Prime 4 su 6 in turno" semplificato: tra le sezioni ammesse si considerano solo le
-            // prime 4 per PERC crescente, e si sceglie la prima (PERC minimo). V. nota assunzioni.
-            var primeInTurno = classifica.Take(4).ToList();
-            var scelta = primeInTurno.First();
+            var scelta = classifica.First();
 
-            tracer.Trace($"SelezionaSezione: classifica=[{string.Join(", ", classifica.Select(x => $"{x.Sezione.GetAttributeValue<string>("agc_name")}:{x.Perc:N2}"))}] scelta={scelta.Sezione.GetAttributeValue<string>("agc_name")}");
+            tracer.Trace($"SelezionaSezione: indiceTurno={indiceTurno} inTurno=[{string.Join(", ", inTurno.Select(s => s.GetAttributeValue<string>("agc_name")))}] classifica=[{string.Join(", ", classifica.Select(x => $"{x.Sezione.GetAttributeValue<string>("agc_name")}:{x.Perc:N2}"))}] scelta={scelta.Sezione.GetAttributeValue<string>("agc_name")}");
+
+            // Ruota la finestra: la prossima assegnazione parte dalla sezione successiva, cosi nel
+            // tempo tutte le sezioni compatibili entrano ed escono dalla finestra "in turno" a
+            // parità di opportunità, evitando la concentrazione osservata quando la finestra era
+            // fissa sulle prime N per numero.
+            ScriviIndiceTurno(service, tracer, (indiceTurno + 1) % totaleCandidate);
 
             return scelta.Sezione.ToEntityReference();
+        }
+
+        /// <summary>
+        /// Legge l'indice corrente di rotazione dal record <c>agc_configurazione</c> con
+        /// <c>agc_nome</c> = <see cref="ConfigurazioneIndiceTurno"/>. Se il record non esiste
+        /// ancora (prima esecuzione), lo crea con indice 0.
+        /// </summary>
+        private static int LeggiIndiceTurno(IOrganizationService service, ITracingService tracer)
+        {
+            var record = TrovaConfigurazione(service);
+            if (record == null)
+            {
+                tracer.Trace($"LeggiIndiceTurno: record di configurazione '{ConfigurazioneIndiceTurno}' non trovato, creazione con indice 0.");
+                var nuovo = new Entity("agc_configurazione")
+                {
+                    ["agc_nome"] = ConfigurazioneIndiceTurno,
+                    ["agc_valore"] = 0m
+                };
+                service.Create(nuovo);
+                return 0;
+            }
+
+            var valore = record.GetAttributeValue<decimal>("agc_valore");
+            return (int)valore;
+        }
+
+        /// <summary>
+        /// Persiste il nuovo indice di rotazione nel record <c>agc_configurazione</c>.
+        /// </summary>
+        private static void ScriviIndiceTurno(IOrganizationService service, ITracingService tracer, int nuovoIndice)
+        {
+            var record = TrovaConfigurazione(service);
+            if (record == null)
+            {
+                var nuovo = new Entity("agc_configurazione")
+                {
+                    ["agc_nome"] = ConfigurazioneIndiceTurno,
+                    ["agc_valore"] = (decimal)nuovoIndice
+                };
+                service.Create(nuovo);
+                return;
+            }
+
+            var update = new Entity("agc_configurazione", record.Id)
+            {
+                ["agc_valore"] = (decimal)nuovoIndice
+            };
+            service.Update(update);
+            tracer.Trace($"ScriviIndiceTurno: nuovo indice={nuovoIndice}");
+        }
+
+        private static Entity TrovaConfigurazione(IOrganizationService service)
+        {
+            var query = new QueryExpression("agc_configurazione")
+            {
+                ColumnSet = new ColumnSet("agc_valore"),
+                Criteria = new FilterExpression(LogicalOperator.And)
+                {
+                    Conditions = { new ConditionExpression("agc_nome", ConditionOperator.Equal, ConfigurazioneIndiceTurno) }
+                },
+                TopCount = 1
+            };
+            return service.RetrieveMultiple(query).Entities.FirstOrDefault();
         }
 
         /// <summary>

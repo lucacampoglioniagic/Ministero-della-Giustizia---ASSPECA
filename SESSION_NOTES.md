@@ -93,8 +93,43 @@ meccanismo di turno reale va implementato per evitare questo comportamento in pr
 
 ### Todo aggiornato
 - [x] Dati demo definitivi: 43 magistrati (quote rispettate) + 20 fascicoli di test assegnati
-- [ ] Implementare la rotazione storica "prime 4 su 6 a turno" per il livello 1 (Sezione), per evitare
-  la concentrazione osservata quando più sezioni sono in pareggio di PERC
+- [x] Implementare la rotazione storica "prime 4 su 6 a turno" per il livello 1 (Sezione)
+
+---
+
+## Session 2026-09-10 (continua) — Rotazione "prime 4 su 6 a turno" (Livello 1)
+
+### Problema
+Il test su dati demo aveva rivelato che, a parità di PERC=0 (categorie "nuove" senza storico), il
+tie-break sceglieva sempre la sezione con numero più basso → concentrazione su Sezione 1.
+
+### Soluzione implementata
+`AssegnaFascicoloAppelloPlugin.SelezionaSezione` ora mantiene una **finestra rotante** delle sezioni
+"in turno" (dimensione 4, come da assunzione POC), il cui indice di partenza è persistito nella
+tabella chiave/valore `agc_configurazione` (record `agc_nome = "IndiceTurnoSezione"`,
+`agc_valore` = indice 0..N-1). Ad ogni assegnazione:
+1. le sezioni compatibili vengono ordinate per `agc_numero`;
+2. si estrae la finestra circolare di 4 sezioni a partire dall'indice corrente;
+3. si sceglie, tra queste, quella con PERC minimo (tie-break: numero sezione);
+4. l'indice viene incrementato di 1 (modulo il numero di sezioni candidate) e ripersistito, cosi la
+   sezione di partenza ruota ad ogni chiamata successiva.
+
+### Deploy
+- Build: `dotnet build` (0 errori) sul progetto `05 - Power Platform/Plugin-Custom-API`.
+- Pubblicazione assembly aggiornato in Dataverse via **`pac plugin push`**:
+  `pac plugin push --environment https://lccministerogiustiziademo.crm4.dynamics.com/ --pluginId 58748bb9-5aac-f111-aaab-7ced8d775612 --pluginFile "bin\Debug\net462\ASSPECA-Plugin-Custom-API.dll" --type Assembly`
+  (comando comodo per i prossimi aggiornamenti del plugin: non richiede Plugin Registration Tool).
+
+### Verifica
+Creati 12 nuovi fascicoli di test (categorie varie, mai assegnate prima) ed eseguita la Custom API in
+sequenza: le assegnazioni ora **ruotano correttamente tra le sezioni 2, 3, 4, 5** (pattern osservato:
+3,3,4,5,2,2,3,3,4,5,2,2), invece di concentrarsi tutte sulla Sezione 1 come nel test precedente.
+Conferma che la rotazione funziona; nel tempo, con altre assegnazioni, anche le sezioni 1 e 6
+rientreranno nella finestra.
+
+### Todo aggiornato
+- [ ] Validare con il cliente la dimensione della finestra "in turno" (4 su 6) e la logica esatta di
+  rotazione (l'assunzione POC è documentata nel codice del plugin, par. 6.1 dell'Analisi Comparativa)
 
 ---
 
