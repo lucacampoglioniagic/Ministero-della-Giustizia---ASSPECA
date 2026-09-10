@@ -4,6 +4,53 @@
 
 ---
 
+## Session 2026-09-10 — Flusso "Notifica Lotto Giornaliero Assegnazioni"
+
+### Obiettivo di sessione
+Backlog item "Stampa PDF giornaliera del lotto di assegnazione con firma del Presidente". Non essendo
+disponibile in ambiente alcuna connessione O365/Word/OneDrive né la possibilità di automatizzare una
+firma, concordato con l'utente un approccio semplificato: **email HTML giornaliera** al posto di
+PDF firmato.
+
+### Flusso implementato
+Cloud Flow **"Notifica Lotto Giornaliero Assegnazioni"** (Power Automate, solution "ASSPECA POC",
+workflow id `32794773-1aad-f111-aaab-7ced8d775612`), stato: **salvato e attivo**.
+- **Recurrence** (giornaliera, 18:00 UTC)
+- **Elenca righe** (Microsoft Dataverse) su `agc_fascicoloappellos`, filtro:
+  `_agc_sezioneassegnata_value ne null and modifiedon` nell'intervallo "oggi" (proxy per "assegnato
+  oggi", non esiste un campo dedicato "data assegnazione")
+- **Crea tabella HTML** dal risultato
+- **Condizione**: se ci sono righe (`length(...) > 0`) → **Invia una notifica di posta elettronica
+  (V3)** (connettore "Posta", basato su SendGrid nativo Microsoft) con oggetto/corpo dinamici che
+  includono la tabella HTML e una nota sui limiti (niente PDF/firma automatica).
+
+### Bug scoperto e corretto durante il test
+Il filtro dell'azione "Elenca righe" referenziava `agc_sezioneassegnata` (nome logico del lookup),
+ma Dataverse Web API richiede il nome della proprietà OData del valore del lookup
+**`_agc_sezioneassegnata_value`** per i filtri — il nome "nudo" non è filtrabile e dava 400. Corretto
+via PATCH diretto su `workflows.clientdata` (stesso pattern usato per le espressioni). Dopo la
+correzione, il test manuale del flusso ha confermato: List rows, filtro e Condizione funzionano
+correttamente (branch "Vero" raggiunto con righe trovate).
+
+### Limite scoperto: connettore "Mail" disabilitato per il tenant
+Il test end-to-end dell'azione email ha restituito `Unauthorized`. Il dettaglio dell'errore rivela la
+causa reale (non di configurazione): **"The Mail connector is currently restricted for new tenants.
+Microsoft is working on enabling this connector. In the meantime, please consider using alternatives
+like Office 365 Outlook, Gmail, SendGrid connector instead."** — è un blocco lato piattaforma per i
+tenant nuovi, non risolvibile lato flusso.
+
+**Decisione utente**: lasciare il flusso così com'è (struttura corretta e verificata, azione email
+pronta ma non eseguibile finché Microsoft non abilita il connettore per questo tenant). Il flusso si
+attiverà automaticamente non appena il connettore sarà sbloccato, senza ulteriori modifiche.
+
+### Todo aggiornato
+- [x] Stampa PDF giornaliera → sostituita con notifica email HTML (limite firma/PDF documentato)
+- [ ] Riattivare/verificare l'invio email non appena il connettore "Mail" sarà abilitato dal tenant
+  (o valutare in futuro un connettore alternativo: Office 365 Outlook, Gmail, SendGrid con account
+  esterno)
+
+---
+
 ## Session 2026-09-09 — Analisi, decisione di sicurezza, schema dati, motore di assegnazione, sicurezza, ribbon
 
 ### Obiettivo di sessione
@@ -112,7 +159,8 @@ Dataverse (ambiente `LCC-MINISTEROGIUSTIZIA-DEMO`, solution `ASSPECAPOC`).
   e fascicoli di test realistici per validare il motore con un dataset più ampio
 - [ ] **Variazione**: al momento la tabella `agc_variazione` esiste ma non c'è ancora un flusso/plugin
   che la usi per modificare sezione/magistrato di un fascicolo già assegnato
-- [ ] **Stampa PDF giornaliera** del lotto di assegnazione con firma Presidente (Power Automate?)
+- [x] **Stampa PDF giornaliera** del lotto di assegnazione con firma Presidente → sostituita con
+  notifica email HTML via flusso "Notifica Lotto Giornaliero Assegnazioni" (v. Session 2026-09-10)
 - [ ] **Cruscotto/PCF** per il carico per categoria (sezione e magistrato)
 - [ ] **Validazione con il cliente** delle assunzioni aperte (documentate in par. 6.1 dell'analisi
   comparativa): formula PERC esatta, semantica "data deposito", direzione tie-break anzianità,
