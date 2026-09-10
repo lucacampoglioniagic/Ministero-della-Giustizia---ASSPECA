@@ -4,6 +4,63 @@
 
 ---
 
+## Session 2026-09-10 (continua) — Plugin "Variazione Fascicolo" (Sezionale / Magistrato)
+
+### Obiettivo
+Backlog item "Flusso/plugin Variazione": implementare la logica che applica una rettifica motivata
+di un'assegnazione già effettuata (Variazione Sezionale o Variazione Magistrato), come da manuale
+legacy ASSPECA (F1 p.17-18, F7 slide 5-8).
+
+### Stato di partenza
+La tabella `agc_variazione` esisteva già (creata in una sessione precedente, N7 del modello dati:
+fascicolo, sezione/magistrato prima e dopo, motivo, nota, data provvedimento, tipo variazione
+Sezionale/Magistrato) ma non c'era ancora nessuna logica server-side collegata: creare un record non
+aveva alcun effetto sul fascicolo.
+
+### Implementazione
+- **Refactor**: estratta la logica di selezione del magistrato (Livello 2 del motore) dal plugin
+  `AssegnaFascicoloAppelloPlugin` in una nuova classe condivisa `MotoreAssegnazione` (nuovo file
+  `MotoreAssegnazione.cs`), riutilizzabile anche dal nuovo plugin Variazione. Aggiunto un parametro
+  opzionale `escludiMagistratoId` per poter escludere il magistrato uscente dal ricalcolo.
+- **Nuovo plugin `VariazioneFascicoloPlugin`** (`VariazioneFascicoloPlugin.cs`), registrato su
+  `Create` (PostOperation, sincrono) di `agc_variazione`:
+  - **Variazione Sezionale** (`agc_tipovariazione = 10000`): richiede `agc_sezionedopo` in input; il
+    magistrato nella nuova sezione è SEMPRE ricalcolato automaticamente dal motore (Livello 2), come
+    da manuale ("il magistrato è ricalcolato automaticamente nella nuova sezione").
+  - **Variazione Magistrato** (`agc_tipovariazione = 10001`): la sezione resta invariata;
+    `agc_magistratodopo` può essere scelto manualmente (se valorizzato in input) oppure, se vuoto,
+    selezionato automaticamente escludendo il magistrato uscente (per garantire un cambio reale).
+  - I valori "prima" (`agc_sezioneprima`, `agc_magistratoprima`) sono sempre presi dallo stato
+    corrente del fascicolo al momento della variazione (snapshot per l'audit "vista prima/dopo"),
+    ignorando eventuali valori indicati in input.
+  - Precondizione: il fascicolo deve essere già assegnato (Sezione e Magistrato non nulli),
+    altrimenti l'operazione viene rifiutata con errore esplicito (si usa prima la Custom API
+    `agc_AssegnaFascicoloAppello`).
+  - Aggiorna sia il fascicolo (`agc_sezioneassegnata`/`agc_magistratoassegnato`) sia il record
+    Variazione stesso (con i valori "prima/dopo" effettivi).
+
+### Deploy e registrazione
+- Build (`dotnet build`, 0 errori) + `pac plugin push` per aggiornare l'assembly (stesso comando
+  della sessione precedente).
+- **`pac plugin push` NON registra automaticamente i nuovi plugin type/step**: è stato necessario
+  creare manualmente, via Web API, il record `plugintype` per `VariazioneFascicoloPlugin` e il
+  relativo `sdkmessageprocessingstep` (messaggio `Create`, entità `agc_variazione`, stage 40
+  PostOperation, mode 0 sincrono, rank 1).
+
+### Verifica
+- **Variazione Magistrato** su un fascicolo assegnato a Sezione 3/Marco Bianchi → magistrato
+  ricalcolato automaticamente su Patrizia Gatti (diverso da Marco Bianchi, sezione invariata).
+- **Variazione Sezionale** su un fascicolo assegnato a Sezione 3/Marco Bianchi con `sezionedopo` =
+  Sezione 4 → sezione cambiata correttamente, magistrato ricalcolato automaticamente su Paolo Russo
+  (magistrato di Sezione 4).
+- **Validazione precondizione**: creata una Variazione su un fascicolo NON ancora assegnato → 400
+  rifiutato con messaggio esplicito, nessun record orfano (rollback automatico della transazione).
+
+### Todo aggiornato
+- [x] Flusso/plugin Variazione (Sezionale/Magistrato) con ricalcolo automatico e audit prima/dopo
+
+---
+
 ## Session 2026-09-10 — Flusso "Notifica Lotto Giornaliero Assegnazioni"
 
 ### Obiettivo di sessione

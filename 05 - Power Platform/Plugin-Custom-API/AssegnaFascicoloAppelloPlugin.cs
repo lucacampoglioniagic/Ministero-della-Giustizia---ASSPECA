@@ -59,9 +59,6 @@ namespace AgicAsspeca.Plugins
     /// </summary>
     public class AssegnaFascicoloAppelloPlugin : PluginBase
     {
-        // Valore scelta "Presidente (P)" sul campo contact.agc_tipomagistrato.
-        private const int TipoMagistratoPresidente = 10000;
-
         // Valore scelta "Proposto" sul campo agc_fascicoloappello.agc_stato.
         private const int StatoProposto = 10000;
 
@@ -116,7 +113,7 @@ namespace AgicAsspeca.Plugins
             var sezioneAssegnata = SelezionaSezione(service, tracer, categoriaRef, specializzazioneRef);
 
             // ---------- LIVELLO 2: MAGISTRATO ----------
-            var magistratoAssegnato = SelezionaMagistrato(service, tracer, categoriaRef, sezioneAssegnata.Id, esclusaPresidenti);
+            var magistratoAssegnato = MotoreAssegnazione.SelezionaMagistrato(service, tracer, categoriaRef, sezioneAssegnata.Id, esclusaPresidenti);
 
             // ---------- Aggiornamento fascicolo ----------
             var update = new Entity("agc_fascicoloappello", target.Id)
@@ -196,7 +193,7 @@ namespace AgicAsspeca.Plugins
             var classifica = inTurno.Select(s =>
             {
                 var numeroMagistrati = s.GetAttributeValue<decimal>("agc_numeromagistrati");
-                var conteggioFascicoli = ContaFascicoliCategoria(service, categoriaRef, "agc_sezioneassegnata", s.Id);
+                var conteggioFascicoli = MotoreAssegnazione.ContaFascicoliCategoria(service, categoriaRef, "agc_sezioneassegnata", s.Id);
                 var perc = numeroMagistrati > 0 ? conteggioFascicoli / numeroMagistrati : decimal.MaxValue;
                 return new
                 {
@@ -285,104 +282,5 @@ namespace AgicAsspeca.Plugins
             return service.RetrieveMultiple(query).Entities.FirstOrDefault();
         }
 
-        /// <summary>
-        /// Livello 2: individua, tra i magistrati della sezione assegnata, quello con meno
-        /// fascicoli nella categoria data. Presidenti esclusi se la categoria lo richiede;
-        /// magistrati con esonero totale (100% astensione) esclusi; nuovi magistrati (0 fascicoli
-        /// mai assegnati) trattati come "in coda" (massimo, non minimo).
-        /// </summary>
-        private static EntityReference SelezionaMagistrato(IOrganizationService service, ITracingService tracer,
-            EntityReference categoriaRef, Guid sezioneId, bool esclusaPresidenti)
-        {
-            var filtro = new FilterExpression(LogicalOperator.And)
-            {
-                Conditions =
-                {
-                    new ConditionExpression("agc_ismagistrato", ConditionOperator.Equal, true),
-                    new ConditionExpression("agc_sezionemagistrato", ConditionOperator.Equal, sezioneId),
-                    new ConditionExpression("statecode", ConditionOperator.Equal, 0)
-                }
-            };
-
-            var magistrati = service.RetrieveMultiple(new QueryExpression("contact")
-            {
-                ColumnSet = new ColumnSet("fullname", "agc_tipomagistrato", "agc_datanominamagistrato", "agc_percentualeastensione"),
-                Criteria = filtro
-            }).Entities;
-
-            var candidati = magistrati.Where(m =>
-            {
-                if (esclusaPresidenti && m.GetAttributeValue<OptionSetValue>("agc_tipomagistrato")?.Value == TipoMagistratoPresidente)
-                    return false;
-
-                var astensione = m.Contains("agc_percentualeastensione") ? m.GetAttributeValue<decimal>("agc_percentualeastensione") : 0m;
-                if (astensione >= 100m)
-                    return false;
-
-                return true;
-            }).ToList();
-
-            if (candidati.Count == 0)
-                throw new InvalidPluginExecutionException("Nessun magistrato disponibile nella sezione assegnata (verificare esclusioni Presidente/astensione totale).");
-
-            var conteggi = candidati.Select(m => new
-            {
-                Magistrato = m,
-                Conteggio = ContaFascicoliCategoria(service, categoriaRef, "agc_magistratoassegnato", m.Id),
-                DataNomina = m.Contains("agc_datanominamagistrato") ? m.GetAttributeValue<DateTime>("agc_datanominamagistrato") : (DateTime?)null,
-                TotaleFascicoliAssegnati = ContaFascicoliTotali(service, "agc_magistratoassegnato", m.Id)
-            }).ToList();
-
-            var massimo = conteggi.Count > 0 ? conteggi.Max(x => x.Conteggio) : 0;
-
-            // Nuovo magistrato (nessun fascicolo mai assegnato in nessuna categoria) => "in coda":
-            // il suo conteggio effettivo per l'ordinamento diventa il massimo+1, cosi non riceve
-            // automaticamente il primo fascicolo disponibile (comportamento opposto ad ASPEN).
-            var classifica = conteggi.Select(x => new
-            {
-                x.Magistrato,
-                ConteggioEffettivo = x.TotaleFascicoliAssegnati == 0 ? massimo + 1 : x.Conteggio,
-                x.DataNomina
-            })
-            .OrderBy(x => x.ConteggioEffettivo)
-            .ThenBy(x => x.DataNomina ?? DateTime.MaxValue)
-            .ToList();
-
-            var scelto = classifica.First();
-
-            tracer.Trace($"SelezionaMagistrato: classifica=[{string.Join(", ", classifica.Select(x => $"{x.Magistrato.GetAttributeValue<string>("fullname")}:{x.ConteggioEffettivo}"))}] scelto={scelto.Magistrato.GetAttributeValue<string>("fullname")}");
-
-            return scelto.Magistrato.ToEntityReference();
-        }
-
-        private static int ContaFascicoliCategoria(IOrganizationService service, EntityReference categoriaRef, string lookupField, Guid lookupId)
-        {
-            var query = new QueryExpression("agc_fascicoloappello")
-            {
-                ColumnSet = new ColumnSet(false),
-                Criteria = new FilterExpression(LogicalOperator.And)
-                {
-                    Conditions =
-                    {
-                        new ConditionExpression("agc_categoria", ConditionOperator.Equal, categoriaRef.Id),
-                        new ConditionExpression(lookupField, ConditionOperator.Equal, lookupId)
-                    }
-                }
-            };
-            return service.RetrieveMultiple(query).Entities.Count;
-        }
-
-        private static int ContaFascicoliTotali(IOrganizationService service, string lookupField, Guid lookupId)
-        {
-            var query = new QueryExpression("agc_fascicoloappello")
-            {
-                ColumnSet = new ColumnSet(false),
-                Criteria = new FilterExpression(LogicalOperator.And)
-                {
-                    Conditions = { new ConditionExpression(lookupField, ConditionOperator.Equal, lookupId) }
-                }
-            };
-            return service.RetrieveMultiple(query).Entities.Count;
-        }
     }
 }
