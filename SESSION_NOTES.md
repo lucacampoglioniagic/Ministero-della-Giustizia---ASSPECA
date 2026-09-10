@@ -51,6 +51,53 @@ attiverà automaticamente non appena il connettore sarà sbloccato, senza ulteri
 
 ---
 
+## Session 2026-09-10 (continua) — Dati demo definitivi: magistrati e fascicoli realistici
+
+### Obiettivo
+Popolare il dataset demo con un numero realistico di magistrati (coerente con le quote per sezione) e
+fascicoli di test, per validare il motore di assegnazione a 2 livelli su scala reale.
+
+### Magistrati
+- Le 6 `Sezioni` hanno quote (`agc_numeromagistrati`) 8/9/8/8/5/5 = **43 magistrati totali**.
+- I 6 contact magistrato demo preesistenti (Laura Verdi, Anna Greco, Marco Bianchi, Paolo Russo,
+  Alessia Gialli, Chiara Marini) sono stati aggiornati come **Presidente (P)**, uno per sezione, con
+  data di nomina "storica" (1998-2003) per simulare anzianità.
+- Creati **37 nuovi contact "Consigliere (C)"** (nomi italiani realistici) per completare esattamente
+  le quote di ciascuna sezione, con data di nomina distribuita 2003-2020 (per testare i tie-break di
+  anzianità) e `agc_percentualeastensione` per lo più 0, con alcuni casi 50%/100% per testare
+  l'esclusione per astensione.
+- **Gotcha Web API**: il bind del lookup `agc_sezionemagistrato` su `contact` richiede il nome della
+  **navigation property** `agc_SezioneMagistrato` (PascalCase, diverso dal nome logico
+  minuscolo) nell'annotazione `@odata.bind` — usare il nome logico minuscolo dà 400
+  ("undeclared property"). Recuperato il nome corretto via
+  `EntityDefinitions(LogicalName='contact')/ManyToOneRelationships`.
+- Verificato via Web API: distribuzione finale magistrati per sezione esattamente 8/9/8/8/5/5 = 43.
+
+### Fascicoli di test
+- Creati **20 nuovi fascicoli** (`agc_fascicoloappello`) non assegnati, con categorie/specializzazioni
+  variate, imputati e date deposito realistici.
+- Eseguita la Custom API `agc_AssegnaFascicoloAppello` su tutti e 20 (sequenzialmente, per evitare
+  condizioni di gara nel conteggio) → **20/20 assegnazioni completate senza errori**, confermando che
+  il motore funziona correttamente con il nuovo dataset di 43 magistrati.
+
+### Limite reale scoperto grazie al test su scala
+La distribuzione risultante è fortemente sbilanciata: quasi tutti i fascicoli sono finiti su
+**Sezione 1 / Laura Verdi**. Causa: molte categorie di test sono "nuove" per tutte le sezioni (nessun
+fascicolo storico in quella categoria), quindi il PERC (livello 1) è 0 per tutte le sezioni compatibili
+→ pareggio → il tie-break attuale sceglie la sezione con **numero più basso**, sempre la stessa. Allo
+stesso modo, a livello 2, il magistrato più anziano con 0 fascicoli nella categoria vince sempre.
+Questo conferma quanto già annotato come rischio aperto nell'analisi comparativa (par. 6.1): la
+rotazione storica "prime 4 su 6 a turno" non è ancora modellata, e con dati demo scarsi/nuovi il
+tie-break deterministico produce concentrazione. **Da validare con il cliente** prima del rilascio: il
+meccanismo di turno reale va implementato per evitare questo comportamento in produzione.
+
+### Todo aggiornato
+- [x] Dati demo definitivi: 43 magistrati (quote rispettate) + 20 fascicoli di test assegnati
+- [ ] Implementare la rotazione storica "prime 4 su 6 a turno" per il livello 1 (Sezione), per evitare
+  la concentrazione osservata quando più sezioni sono in pareggio di PERC
+
+---
+
 ## Session 2026-09-09 — Analisi, decisione di sicurezza, schema dati, motore di assegnazione, sicurezza, ribbon
 
 ### Obiettivo di sessione
