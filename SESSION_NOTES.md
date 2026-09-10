@@ -4,6 +4,52 @@
 
 ---
 
+## Session 2026-09-10 (continua) — Documentazione finale: punti aperti, guida funzionale, checklist di test, riordino repo
+
+### Obiettivo
+Chiudere la sessione producendo la documentazione mancante e riordinando il materiale in repo:
+1. un documento dei punti aperti da validare con il cliente;
+2. una guida funzionale in linguaggio semplice per chi non conosce l'app;
+3. una checklist di test end-to-end (dall'inizio del progetto ad oggi), da spuntare manualmente;
+4. riordino/aggiornamento di tutta la documentazione di repo.
+
+### Documenti prodotti
+- [`03 - Documentazione Prodotta/Funzionale/Punti Aperti da Validare con il Cliente.md`](03%20-%20Documentazione%20Prodotta/Funzionale/Punti%20Aperti%20da%20Validare%20con%20il%20Cliente.md) —
+  consolida tutte le assunzioni/semplificazioni prese durante il POC (rotazione "in turno", tie-break
+  anzianità, categorie escluse Presidenti, trimestre/mese nascita imputato non implementato, sezioni
+  specializzate fisse vs rotazione semestrale, Variazione Sezionale sempre automatica, connettore
+  Mail bloccato dalla piattaforma, dati demo vs reali, ruoli di sicurezza).
+- [`03 - Documentazione Prodotta/Funzionale/Guida Funzionale ASSPECA.md`](03%20-%20Documentazione%20Prodotta/Funzionale/Guida%20Funzionale%20ASSPECA.md) —
+  spiegazione non tecnica di cosa fa l'app e come si usa (fascicolo, assegnazione a 2 livelli,
+  variazione, cruscotto, notifica giornaliera, modelli Word, sicurezza).
+- [`03 - Documentazione Prodotta/Tecnica/Checklist di Test.md`](03%20-%20Documentazione%20Prodotta/Tecnica/Checklist%20di%20Test.md) —
+  checklist cumulativa (14 aree, dalle anagrafiche alla sicurezza) di tutto quanto realizzato
+  dall'inizio del progetto, con caselle da spuntare manualmente in una prossima sessione di collaudo.
+
+### Riordino repository
+- Spostati i file sciolti alla radice nelle rispettive cartelle sotto `05 - Power Platform/`:
+  `Fascicolo Appello - Modello Word.docx` e `Variazione - Modello Word.docx` → nuova cartella
+  `Word-Templates/`; cartella `pcf-cruscotto/` (progetto del componente PCF `CruscottoFascicoli`,
+  fino ad ora mai documentato in queste note pur essendo già implementato) → `PCF/pcf-cruscotto/`;
+  `seed-demo-data.mjs` (script di popolamento dati demo) → `Dataverse/`.
+- Aggiornato `README.md`: struttura repository, tabella documenti di riferimento (nuovi 3 documenti),
+  nuova sezione "Funzionalità completate dopo l'analisi iniziale" (app model-driven, modelli Word,
+  cruscotto PCF, rotazione, Variazione, notifica giornaliera, dati demo — funzionalità già realizzate
+  ma non ancora riflesse nel README, la cui sezione "stato attuale" risultava disallineata) e stato
+  POC aggiornato.
+
+### Nota sulla tracciabilità
+Alcune funzionalità risultavano già implementate (app model-driven, cruscotto PCF, modelli Word) ma
+non erano mai state documentate in questo file con una propria voce di sessione: sono ora tracciate
+retroattivamente nel README e nella nuova documentazione prodotta, così da avere una base coerente
+per la checklist di test e per i punti aperti.
+
+### Prossimi passi
+- [ ] Eseguire la Checklist di Test con l'utente, una voce alla volta
+- [ ] Rivedere il documento Punti Aperti con il cliente e annotare le risposte ricevute
+
+---
+
 ## Session 2026-09-10 (continua) — Plugin "Variazione Fascicolo" (Sezionale / Magistrato)
 
 ### Obiettivo
